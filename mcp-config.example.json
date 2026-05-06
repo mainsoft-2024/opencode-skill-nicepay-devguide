@@ -1,5 +1,0 @@
-{
-  "name": "nicepay_devguide",
-  "command": "node",
-  "args": ["/your/clone/nicepay-devguide-mcp/dist/cli.bundle.js"]
-}
