@@ -12,6 +12,7 @@ npx -y skills add paulp-o/opencode-skill-nicepay-devguide -g -a opencode -y
 
 ```bash
 cd ~/.config/opencode/skills/nicepay-devguide
+node pin-mcp-config.cjs   # 클라이언트가 작업 디렉터리를 스킬 폴더로 안 잡을 때
 npx -y mcp-to-skill@0.2.2 exec --config ./mcp-config.json --list
 ```
 

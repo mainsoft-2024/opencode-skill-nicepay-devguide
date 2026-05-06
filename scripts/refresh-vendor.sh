@@ -9,4 +9,5 @@ fi
 mkdir -p "$ROOT/vendor/nicepay-devguide-mcp/dist"
 cp "$SRC/dist/cli.bundle.js" "$ROOT/vendor/nicepay-devguide-mcp/dist/cli.bundle.js"
 rsync -a --delete "$SRC/data/manual" "$ROOT/vendor/nicepay-devguide-mcp/data/"
+node "$ROOT/pin-mcp-config.cjs" || true
 echo "OK: vendor synced from $SRC"

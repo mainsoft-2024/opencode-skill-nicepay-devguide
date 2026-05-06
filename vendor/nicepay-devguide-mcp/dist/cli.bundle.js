@@ -14163,20 +14163,33 @@ class DocumentIndexer {
     return this.index.get(filePath);
   }
   searchDocuments(query) {
-    const lowerQuery = query.toLowerCase();
+    const q = query.trim();
+    if (!q.length)
+      return [];
+    const isCjk = /[\uAC00-\uD7A3]/.test(q);
+    const lowerQuery = q.toLowerCase();
     const results = [];
     for (const doc2 of this.index.values()) {
       let score = 0;
-      if (doc2.title.toLowerCase().includes(lowerQuery)) {
+      if (isCjk) {
+        if (doc2.title.includes(q))
+          score += 10;
+      } else if (doc2.title.toLowerCase().includes(lowerQuery)) {
         score += 10;
       }
-      if (doc2.fileName.toLowerCase().includes(lowerQuery)) {
+      if (isCjk ? doc2.fileName.includes(q) : doc2.fileName.toLowerCase().includes(lowerQuery)) {
         score += 5;
       }
-      const keywordMatches = doc2.keywords.filter((k) => k.includes(lowerQuery)).length;
-      score += keywordMatches;
-      if (doc2.content.toLowerCase().includes(lowerQuery)) {
-        score += 1;
+      for (const k of doc2.keywords) {
+        if (isCjk) {
+          if (k.includes(q) || q.includes(k))
+            score += 2;
+        } else if (k.includes(lowerQuery)) {
+          score += 1;
+        }
+      }
+      if (isCjk ? doc2.content.includes(q) : doc2.content.toLowerCase().includes(lowerQuery)) {
+        score += 2;
       }
       if (score > 0) {
         results.push({ doc: doc2, score });
@@ -14198,6 +14211,20 @@ class DocumentIndexer {
 
 // src/utils/markdownParser.ts
 class MarkdownParser {
+  static plainTextForTableCell(cell) {
+    let s = cell.trim();
+    s = s.replace(/`([^`]+)`/g, "$1");
+    const linkTexts = [];
+    const re = /\[([^\]]+)\]\([^)]+\)/g;
+    let m;
+    while ((m = re.exec(s)) !== null) {
+      linkTexts.push(m[1]);
+    }
+    if (linkTexts.length > 0) {
+      return linkTexts.join(" ");
+    }
+    return s.replace(/\*/g, "").trim();
+  }
   static extractCodeBlocks(content) {
     const codeBlocks = [];
     const lines = content.split(`
@@ -14470,7 +14497,7 @@ class NicePayMCPServer {
   constructor() {
     this.server = new Server({
       name: "nicepay-devguide-mcp",
-      version: "0.2.0"
+      version: "0.2.1"
     }, {
       capabilities: {
         tools: {}
@@ -14540,7 +14567,11 @@ class NicePayMCPServer {
                 },
                 language: {
                   type: "string",
-                  description: '언어 (선택사항, 예 "javascript", "python", "curl" 등)'
+                  description: "선택. 예: javascript, python, curl, bash. 별칭: lang (동일)"
+                },
+                lang: {
+                  type: "string",
+                  description: "language와 동일 별칭 (호환용)"
                 }
               },
               required: ["topic"]
@@ -14613,7 +14644,11 @@ class NicePayMCPServer {
                 isError: true
               };
             }
-            result = await this.getCodeSample(args.topic, args.language);
+            {
+              const a = args;
+              const lang = typeof args.language === "string" ? args.language : typeof a.lang === "string" ? a.lang : undefined;
+              result = await this.getCodeSample(args.topic, lang);
+            }
             break;
           case "get_sdk_method":
             if (!args?.method_name || typeof args.method_name !== "string") {
@@ -14801,9 +14836,21 @@ class NicePayMCPServer {
           isError: true
         };
       }
+      const isCjkQ = /[\uAC00-\uD7A3]/.test(query);
+      const qNorm = isCjkQ ? query : query.toLowerCase();
+      const rowMatches = (cell) => {
+        const raw = cell || "";
+        const plain = MarkdownParser.plainTextForTableCell(raw);
+        if (isCjkQ) {
+          return plain.includes(query) || raw.includes(query);
+        }
+        return plain.toLowerCase().includes(qNorm) || raw.toLowerCase().includes(qNorm);
+      };
       const matchingRows = uriTable.rows.filter((row) => {
-        const apiName2 = row.cells[apiIndex]?.content || "";
-        return apiName2.toLowerCase().includes(query.toLowerCase());
+        const apiCell = row.cells[apiIndex]?.content || "";
+        const methodCell = row.cells[methodIndex]?.content || "";
+        const endpointCell = row.cells[endpointIndex]?.content || "";
+        return rowMatches(apiCell) || rowMatches(methodCell) || rowMatches(endpointCell);
       });
       if (matchingRows.length === 0) {
         const searchResults = this.docIndexer.searchDocuments(query);
@@ -14961,6 +15008,20 @@ ${block.code}
       };
     }
   }
+  normalizeCodeLanguage(lang) {
+    if (!lang || typeof lang !== "string")
+      return;
+    const x = lang.trim().toLowerCase();
+    const map2 = {
+      js: "javascript",
+      ts: "typescript",
+      tsx: "typescript",
+      sh: "bash",
+      shell: "bash",
+      zsh: "bash"
+    };
+    return map2[x] ?? lang.trim();
+  }
   async getCodeSample(topic, language) {
     if (!topic || topic.trim().length === 0) {
       return {
@@ -14975,6 +15036,7 @@ ${block.code}
     }
     try {
       const query = topic.trim();
+      const langHint = this.normalizeCodeLanguage(language);
       const searchResults = this.docIndexer.searchDocuments(query);
       if (searchResults.length === 0) {
         return {
@@ -14990,7 +15052,10 @@ ${block.code}
       }
       const codeBlocks = [];
       for (const doc2 of searchResults.slice(0, 10)) {
-        let blocks = language ? MarkdownParser.extractCodeBlocksByLanguage(doc2.content, language) : MarkdownParser.extractCodeBlocks(doc2.content);
+        let blocks = langHint ? MarkdownParser.extractCodeBlocksByLanguage(doc2.content, langHint) : MarkdownParser.extractCodeBlocks(doc2.content);
+        if (langHint && blocks.length === 0) {
+          blocks = MarkdownParser.extractCodeBlocks(doc2.content);
+        }
         blocks.forEach((block) => {
           const blockText = block.code.toLowerCase();
           const queryLower = query.toLowerCase();
@@ -14998,9 +15063,9 @@ ${block.code}
           if (blockText.includes(queryLower)) {
             relevance += 10;
           }
-          if (language && block.language) {
+          if (langHint && block.language) {
             const blockLang = block.language.toLowerCase();
-            const targetLang = language.toLowerCase();
+            const targetLang = langHint.toLowerCase();
             if (blockLang === targetLang || blockLang.includes(targetLang) || targetLang.includes(blockLang)) {
               relevance += 5;
             }
@@ -15009,7 +15074,7 @@ ${block.code}
           if (apiKeywords.some((keyword) => blockText.includes(keyword))) {
             relevance += 3;
           }
-          if (relevance > 0 || blocks.length === 1) {
+          if (relevance > 0 || blocks.length === 1 || langHint === undefined) {
             codeBlocks.push({
               doc: doc2,
               block,
@@ -15024,14 +15089,14 @@ ${block.code}
           content: [
             {
               type: "text",
-              text: `"${query}"${language ? ` (${language})` : ""}에 대한 코드 샘플을 찾을 수 없습니다.
+              text: `"${query}"${langHint ? ` (${langHint})` : ""}에 대한 코드 샘플을 찾을 수 없습니다.
 
 다른 키워드나 언어로 검색해보세요.`
             }
           ]
         };
       }
-      let resultText = `## "${query}" 코드 샘플${language ? ` (${language})` : ""}
+      let resultText = `## "${query}" 코드 샘플${langHint ? ` (${langHint})` : ""}
 
 `;
       resultText += `총 ${codeBlocks.length}개의 코드 샘플을 찾았습니다.
@@ -15325,4 +15390,4 @@ server.run().catch((error2) => {
   process.exit(1);
 });
 
-//# debugId=63B6831C36AE73E964756E2164756E21
+//# debugId=B93332D02646DE3964756E2164756E21
