@@ -14478,43 +14478,149 @@ class Logger {
 var logger = new Logger;
 
 // src/resolve-docs-path.ts
-import { resolve } from "node:path";
+import { resolve as resolve2 } from "node:path";
 import { fileURLToPath } from "node:url";
-function resolveDocsBasePath() {
-  const env = process.env.DOCS_BASE_PATH?.trim();
-  if (env) {
-    return resolve(env);
+
+// src/ensure-manual-repo.ts
+import { existsSync as existsSync2, mkdirSync, readdirSync as readdirSync2 } from "node:fs";
+import { basename as basename2, dirname, join as join2, resolve } from "node:path";
+import { homedir } from "node:os";
+import { spawn } from "node:child_process";
+var NICEPAY_MANUAL_REPO = "https://github.com/nicepayments/nicepay-manual.git";
+function userDataManualPath() {
+  const xdg = process.env.XDG_DATA_HOME?.trim();
+  const base = xdg && xdg.length > 0 ? xdg : join2(homedir(), ".local", "share");
+  return join2(base, "nicepay-devguide-mcp", "nicepay-manual");
+}
+function looksLikeManualRoot(p) {
+  return existsSync2(join2(p, "api")) && existsSync2(join2(p, "common")) && existsSync2(join2(p, "README.md"));
+}
+function runGit(cwd, args) {
+  return new Promise((resolvePromise, reject) => {
+    const child = spawn("git", args, {
+      cwd,
+      stdio: ["ignore", "inherit", "inherit"]
+    });
+    child.on("error", (err) => reject(err));
+    child.on("close", (code) => {
+      if (code === 0)
+        resolvePromise();
+      else
+        reject(new Error(`git ${args.join(" ")} exited with code ${code}`));
+    });
+  });
+}
+async function gitPullIfPossible(dir) {
+  if (!existsSync2(join2(dir, ".git")))
+    return;
+  await runGit(dir, ["pull", "--ff-only"]);
+}
+async function ensureNicepayManualAt(targetDir) {
+  const abs = resolve(targetDir);
+  if (looksLikeManualRoot(abs)) {
+    if (process.env.NICEPAY_MANUAL_PULL === "1") {
+      try {
+        await gitPullIfPossible(abs);
+      } catch (e) {
+        console.warn("[nicepay-devguide-mcp] git pull skipped:", e);
+      }
+    }
+    return;
   }
+  mkdirSync(dirname(abs), { recursive: true });
+  if (existsSync2(abs)) {
+    const entries = readdirSync2(abs);
+    if (entries.length === 0) {
+      await runGit(abs, ["clone", "--depth", "1", NICEPAY_MANUAL_REPO, "."]);
+    } else {
+      throw new Error(`[nicepay-devguide-mcp] ${abs} exists but is not a valid nicepay-manual (need api/, common/, README.md). Remove the directory or set NICEPAY_MANUAL_PATH to another location.`);
+    }
+  } else {
+    await runGit(dirname(abs), [
+      "clone",
+      "--depth",
+      "1",
+      NICEPAY_MANUAL_REPO,
+      basename2(abs)
+    ]);
+  }
+  if (!looksLikeManualRoot(abs)) {
+    throw new Error(`[nicepay-devguide-mcp] Clone finished but ${abs} does not look like nicepay-manual.`);
+  }
+}
+
+// src/resolve-docs-path.ts
+function tryVendoredPath() {
   const here = fileURLToPath(new URL(".", import.meta.url));
-  return resolve(here, "..", "data", "manual");
+  const v = resolve2(here, "..", "data", "manual");
+  return looksLikeManualRoot(v) ? v : null;
+}
+async function resolveDocsBasePathWithEnsure() {
+  const autoclone = process.env.NICEPAY_MANUAL_AUTOCLONE !== "0" && process.env.NICEPAY_MANUAL_AUTOCLONE !== "false";
+  const explicit = process.env.NICEPAY_MANUAL_PATH?.trim() || process.env.DOCS_BASE_PATH?.trim();
+  if (explicit) {
+    const p = resolve2(explicit);
+    if (looksLikeManualRoot(p))
+      return p;
+    if (!autoclone) {
+      throw new Error(`[nicepay-devguide-mcp] NICEPAY_MANUAL_PATH / DOCS_BASE_PATH points to invalid manual: ${p}`);
+    }
+    await ensureNicepayManualAt(p);
+    return p;
+  }
+  if (autoclone) {
+    try {
+      const user = userDataManualPath();
+      await ensureNicepayManualAt(user);
+      return user;
+    } catch (e) {
+      console.error("[nicepay-devguide-mcp] autoclone to user data dir failed:", e);
+      const v2 = tryVendoredPath();
+      if (v2) {
+        console.error("[nicepay-devguide-mcp] falling back to vendored data/manual");
+        return v2;
+      }
+      throw e;
+    }
+  }
+  const v = tryVendoredPath();
+  if (v)
+    return v;
+  throw new Error("[nicepay-devguide-mcp] No manual found. Clone https://github.com/nicepayments/nicepay-manual and set NICEPAY_MANUAL_PATH, or leave NICEPAY_MANUAL_AUTOCLONE enabled (default), or vendor data/manual.");
 }
 
 // src/nicepay-mcp-server.ts
 class NicePayMCPServer {
   server;
-  docIndexer;
+  docIndexer = null;
   indexInit = null;
   constructor() {
     this.server = new Server({
       name: "nicepay-devguide-mcp",
-      version: "0.2.1"
+      version: "0.3.0"
     }, {
       capabilities: {
         tools: {}
       }
     });
-    const docsBase = resolveDocsBasePath();
-    logger.info(`문서 루트: ${docsBase}`);
-    this.docIndexer = new DocumentIndexer(docsBase);
     this.setupHandlers();
   }
+  async getDocIndexer() {
+    if (this.docIndexer)
+      return this.docIndexer;
+    const docsBase = await resolveDocsBasePathWithEnsure();
+    logger.info(`문서 루트: ${docsBase}`);
+    this.docIndexer = new DocumentIndexer(docsBase);
+    return this.docIndexer;
+  }
   async ensureIndex() {
+    const indexer = await this.getDocIndexer();
     if (!this.indexInit) {
       this.indexInit = (async () => {
         logger.info("문서 인덱싱 시작...");
         try {
-          await this.docIndexer.buildIndex();
-          logger.info(`문서 인덱싱 완료: ${this.docIndexer.getIndexSize()}개 파일`);
+          await indexer.buildIndex();
+          logger.info(`문서 인덱싱 완료: ${indexer.getIndexSize()}개 파일`);
         } catch (error2) {
           const errorMessage = error2 instanceof Error ? error2.message : String(error2);
           logger.error("문서 인덱싱 실패:", errorMessage, error2);
@@ -14590,6 +14696,24 @@ class NicePayMCPServer {
               },
               required: ["method_name"]
             }
+          },
+          {
+            name: "browse_nicepay_samples",
+            description: "nicepay-manual 마크다운에서 특정 언어의 코드 펜스만 모아, 언어별 구현·샘플 참고용 목록을 만듭니다. topic을 생략하면 여러 문서를 넓게 스캔합니다.",
+            inputSchema: {
+              type: "object",
+              properties: {
+                language: {
+                  type: "string",
+                  description: "코드 블록 언어 (javascript, js, curl, bash, python 등 — get_code_sample과 동일 정규화)"
+                },
+                topic: {
+                  type: "string",
+                  description: "선택. 검색어(예: 결제 승인, Basic 인증). 있으면 관련 문서 위주로 스캔합니다."
+                }
+              },
+              required: ["language"]
+            }
           }
         ]
       };
@@ -14648,6 +14772,24 @@ class NicePayMCPServer {
               const a = args;
               const lang = typeof args.language === "string" ? args.language : typeof a.lang === "string" ? a.lang : undefined;
               result = await this.getCodeSample(args.topic, lang);
+            }
+            break;
+          case "browse_nicepay_samples":
+            if (!args?.language || typeof args.language !== "string") {
+              logger.warn(`잘못된 파라미터: browse_nicepay_samples`, args);
+              return {
+                content: [
+                  {
+                    type: "text",
+                    text: "language 파라미터가 필요합니다."
+                  }
+                ],
+                isError: true
+              };
+            }
+            {
+              const topicArg = typeof args.topic === "string" ? args.topic : undefined;
+              result = await this.browseNicepaySamples(args.language, topicArg);
             }
             break;
           case "get_sdk_method":
@@ -15166,6 +15308,97 @@ ${item.block.code}
       };
     }
   }
+  async browseNicepaySamples(language, topic) {
+    if (!language || language.trim().length === 0) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: "language 파라미터가 필요합니다."
+          }
+        ],
+        isError: true
+      };
+    }
+    try {
+      const ix = this.docIndexer;
+      const langNorm = this.normalizeCodeLanguage(language) || language.trim();
+      let docs;
+      if (topic?.trim()) {
+        docs = ix.searchDocuments(topic.trim()).slice(0, 35);
+      } else {
+        docs = ix.getAllDocuments().slice(0, 45);
+      }
+      const hits = [];
+      for (const doc2 of docs) {
+        let blocks = MarkdownParser.extractCodeBlocksByLanguage(doc2.content, langNorm);
+        if (blocks.length === 0 && langNorm.toLowerCase() === "javascript") {
+          blocks = MarkdownParser.extractCodeBlocksByLanguage(doc2.content, "js");
+        }
+        if (blocks.length === 0)
+          continue;
+        const snippets = blocks.slice(0, 2).map((b) => b.code.length > 1200 ? `${b.code.slice(0, 1200)}
+/* … truncated … */` : b.code);
+        hits.push({ filePath: doc2.filePath, title: doc2.title, blocks: snippets });
+        if (hits.length >= 18)
+          break;
+      }
+      if (hits.length === 0) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `언어 "${langNorm}"에 맞는 코드 펜스를 찾지 못했습니다. topic을 바꾸거나 language를 curl·bash 등으로 시도해 보세요.`
+            }
+          ]
+        };
+      }
+      let resultText = `## 언어별 샘플 (${langNorm}) — 구현 참고
+
+`;
+      resultText += `[nicepay-manual](https://github.com/nicepayments/nicepay-manual) ${hits.length}개 문서에서 발췌
+
+---
+
+`;
+      hits.forEach((h, i) => {
+        resultText += `### ${i + 1}. ${h.title}
+\uD83D\uDCC4 \`${h.filePath}\`
+
+`;
+        h.blocks.forEach((code) => {
+          resultText += `\`\`\`${langNorm}
+${code}
+\`\`\`
+
+`;
+        });
+        resultText += `---
+
+`;
+      });
+      return {
+        content: [
+          {
+            type: "text",
+            text: resultText
+          }
+        ]
+      };
+    } catch (error2) {
+      const errorMessage = error2 instanceof Error ? error2.message : String(error2);
+      logger.error(`browse_nicepay_samples 오류:`, errorMessage);
+      return {
+        content: [
+          {
+            type: "text",
+            text: `샘플 목록 생성 중 오류가 발생했습니다.`
+          }
+        ],
+        isError: true
+      };
+    }
+  }
   async getSDKMethod(methodName) {
     if (!methodName || methodName.trim().length === 0) {
       return {
@@ -15374,7 +15607,7 @@ ${block.code}
     try {
       const transport = new StdioServerTransport;
       await this.server.connect(transport);
-      logger.info("nicepay-devguide-mcp — MCP 서버 시작 (인덱스는 첫 도구 호출 시 생성)");
+      logger.info("nicepay-devguide-mcp — MCP 시작 (첫 도구 호출 시 nicepay-manual 준비·인덱싱)");
     } catch (error2) {
       const errorMessage = error2 instanceof Error ? error2.message : String(error2);
       logger.error("서버 시작 실패:", errorMessage, error2);
@@ -15390,4 +15623,4 @@ server.run().catch((error2) => {
   process.exit(1);
 });
 
-//# debugId=B93332D02646DE3964756E2164756E21
+//# debugId=09CD5A673A1DC0B164756E2164756E21
