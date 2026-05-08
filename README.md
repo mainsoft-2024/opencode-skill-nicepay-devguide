@@ -9,7 +9,7 @@ OpenCode용 스킬. **MCP 번들**(`vendor/nicepay-devguide-mcp/dist/cli.bundle.
 ## 설치
 
 ```bash
-npx -y skills add paulp-o/opencode-skill-nicepay-devguide -g -a opencode -y
+npx -y skills add mainsoft-2024/opencode-skill-nicepay-devguide -g -a opencode -y
 ```
 
 ## 수동 클론 (선택)
