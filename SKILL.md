@@ -1,6 +1,6 @@
 ---
 name: nicepay-devguide
-description: NICEPAY 개발자 매뉴얼 검색·API·샘플·JS SDK — live clone of github.com/nicepayments/nicepay-manual, MCP 번들만 vendor에 포함
+description: NICEPAY 개발자 매뉴얼 검색·API·샘플·JS SDK — nicepay-devguide-mcp 0.3.1, live clone github.com/nicepayments/nicepay-manual, 번들만 vendor
 license: MIT
 compatibility: opencode
 metadata:

@@ -14597,7 +14597,7 @@ class NicePayMCPServer {
   constructor() {
     this.server = new Server({
       name: "nicepay-devguide-mcp",
-      version: "0.3.0"
+      version: "0.3.1"
     }, {
       capabilities: {
         tools: {}
@@ -15623,4 +15623,4 @@ server.run().catch((error2) => {
   process.exit(1);
 });
 
-//# debugId=09CD5A673A1DC0B164756E2164756E21
+//# debugId=BAF95E2193EE43EA64756E2164756E21
