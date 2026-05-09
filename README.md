@@ -1,3 +1,25 @@
+> ## ⚡ TL;DR for AI agents
+>
+> Read **`quickref/INDEX.md`** before doing any NICE Payments coding.
+> The MCP search tools are a fallback for the cases the curated quickref
+> doesn't already cover. The quickref folder contains battle-tested
+> Node/TypeScript recipes for: server-approval card, webhook intake,
+> recurring billing, refund/cancel, signature formulas, error code
+> lookup, and a pre-launch checklist.
+>
+> Quickref index:
+> - `quickref/INDEX.md` — decision tree
+> - `quickref/signature-formulas.md` — 6 formulas, all in one place
+> - `quickref/error-codes.md` — U312, A211, F100... grouped & explained
+> - `quickref/server-approval-card.md` — end-to-end TS recipe
+> - `quickref/webhook-intake.md` — always-200 ack pattern
+> - `quickref/recurring-billing.md` — billing key + cron
+> - `quickref/refund-cancel.md` — cancel · partial refund · 망취소
+> - `quickref/preflight-checklist.md` — go-live checklist
+> - `quickref/gotchas.md` — collected real-world traps
+
+---
+
 # opencode-skill-nicepay-devguide
 
 OpenCode용 스킬. **MCP 번들**(`vendor/nicepay-devguide-mcp/dist/cli.bundle.js`)만 포함합니다. 매뉴얼 본문은 **첫 실행 시** [nicepayments/nicepay-manual](https://github.com/nicepayments/nicepay-manual) 을 `git clone` 으로 받습니다 (`git` 필요).
