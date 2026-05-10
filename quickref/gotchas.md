@@ -58,7 +58,8 @@
 
 - `orderId`는 가맹점이 채번. **한 번 결제(승인)된 orderId는 재사용 불가**.
   `P015` orderId 중복 오류 발생.
-- 부분 취소 시에도 새 orderId 필요. 환불 호출 시 `orderId` 누락하지 말 것.
+- **전액 취소 호출 시에도 `orderId`는 필수** (원거래 orderId 재사용). 누락시 `U100 orderId 필수입력항목이 누락되었습니다`. NICE 공식 샘플도 cancel body에 `{ amount }`만 보이는 듯하지만 실제는 orderId 필수.
+- **부분 취소 시에도 새 orderId 필수** (각 부분취소건이 고유 거래).
 - DB의 Payment.orderId에 unique 제약 → 더블 클릭, 새로고침으로 인한
   중복 결제 자동 차단.
 

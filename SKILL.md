@@ -3,13 +3,13 @@ name: nicepay-devguide
 description: NICE Payments integration reference for AI agents — quickref-first (Korean), with curated Node/TypeScript code recipes and a fallback search MCP over the official manual repo.
 license: MIT
 compatibility: opencode
-version: 0.4.0
+version: 0.4.1
 metadata:
   bundled-location: vendor/nicepay-devguide-mcp
   upstream-manual: https://github.com/nicepayments/nicepay-manual
   generator: mcp-to-skill
   generator-repo: https://github.com/larkinwc/ts-mcp-to-skill
-  quickref-version: "1.0"
+  quickref-version: "1.1"
 ---
 
 # nicepay-devguide

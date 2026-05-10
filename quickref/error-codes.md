@@ -23,6 +23,7 @@
 | `A224` | 허용되지 않은 IP입니다 | NICE 콘솔 IP 화이트리스트에 서버 IP 추가 |
 | `A225` | TID 중복 오류 | 같은 tid로 두 번 승인 시도 — 멱등성 필요 |
 | `A245` | 인증 시간이 초과 되었습니다 | 결제창 인증 후 30분 이내 승인 필요 |
+| **`U100`** | **`<param>` 필수입력항목이 누락되었습니다** | 요청 본문에 필수 필드 누락. **취소 API는 `orderId` 필수** (누락이 제일 흔함). 전액취소엔 원거래 orderId, 부분취소엔 새 orderId. |
 | **`U304`** | **BASIC AUTHENTICATION 실패** | `Authorization: Basic` 헤더 잘못. `clientId:secretKey` base64 확인 |
 | **`U305`** | **BEARER AUTHENTICATION 실패** | Bearer 토큰 만료/오류 |
 | `U306` | 전자서명 및 암호화메시지 검증 실패 | encData 암호화 잘못 (AES-256-CBC 키/IV 확인) |
@@ -52,7 +53,8 @@
 - `A211` — hash 검증 실패 (signData와 동일 카테고리)
 - `A245` — 인증 만료 (30분 초과)
 
-### 거래 정합성 (A1xx, P0xx)
+### 거래 정합성 (A1xx, P0xx, U100)
+- `U100` — 필수 파라미터 누락 (특히 cancel의 `orderId`)
 - `A115` — invalid tid
 - `A123` — amount mismatch (인증 amount와 다름)
 - `A225` — tid duplicate

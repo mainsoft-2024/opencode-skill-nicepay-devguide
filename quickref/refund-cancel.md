@@ -17,13 +17,13 @@ import { getNicepayConfig } from "./config";
 
 export async function cancelPayment(input: {
   tid: string;
+  orderId: string;                // ⚠️ 필수. 전액취소엔 원거래 orderId 재사용, 부분취소엔 새 고유 orderId.
   reason: string;
-  cancelAmt?: number;            // omit for full
+  cancelAmt?: number;             // omit for full
   taxFreeAmt?: number;
-  refundAccount?: string;        // 가상계좌 환불용
+  refundAccount?: string;         // 가상계좌 환불용
   refundBankCode?: string;
   refundHolder?: string;
-  orderId?: string;              // 부분취소 시 새 orderId 필요
 }) {
   const cfg = getNicepayConfig();
   const ediDate = new Date().toISOString().replace("Z", "+09:00");
@@ -33,6 +33,7 @@ export async function cancelPayment(input: {
   const basic = Buffer.from(`${cfg.clientId}:${cfg.secretKey}`).toString("base64");
 
   const body: Record<string, unknown> = {
+    orderId: input.orderId,        // U100 방지용 최상단 명시
     reason: input.reason,
     ediDate,
     signData,
@@ -43,7 +44,6 @@ export async function cancelPayment(input: {
   if (input.refundAccount)               body.refundAccount = input.refundAccount;
   if (input.refundBankCode)              body.refundBankCode= input.refundBankCode;
   if (input.refundHolder)                body.refundHolder  = input.refundHolder;
-  if (input.orderId)                     body.orderId       = input.orderId;
 
   const res = await fetch(`${cfg.apiBase}/v1/payments/${input.tid}/cancel`, {
     method: "POST",
@@ -75,7 +75,7 @@ try {
   approveResp = await fetch(approveUrl, { ... });  // 정상 흐름
 } catch (err) {
   // 망취소: 같은 tid로 cancel 호출. NICE가 미승인 상태면 안전하게 무시.
-  await cancelPayment({ tid, reason: "network_timeout_net_cancel" });
+  await cancelPayment({ tid, orderId: originalOrderId, reason: "network_timeout_net_cancel" });
   throw err;
 }
 ```
@@ -113,6 +113,7 @@ requestRefund: protectedProcedure
 
     const result = await cancelPayment({
       tid: payment.providerPaymentId!,
+      orderId: payment.orderId,           // 원거래 orderId 재사용 (전액취소)
       reason: "사용자 요청 환불",
     });
     if (result.resultCode !== "0000") {
@@ -136,6 +137,8 @@ requestRefund: protectedProcedure
 
 ## 관련 코드
 
+- `0000` 인증 / 호출 자체는 OK (취소 성공인지는 `2001` 별도 확인)
+- `U100` **`<param>` 필수입력항목이 누락되었습니다** — 본문에 `orderId` 또는 `reason` 등 필수 필드 빠짐
 - `2001` 취소 성공
 - `2014` 취소 불가능 거래 (이미 취소됨 / 시한 초과)
 - `2015` 기 취소 요청 (중복 호출)
